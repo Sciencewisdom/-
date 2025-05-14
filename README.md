@@ -1,8 +1,8 @@
 # 2025年全国大学生电子设计竞赛
 
-## B题：实用信号源的设计与制作
+## 二题：实用信号源的设计与制作
 
-**参赛队伍：** \[请在此处填写队伍名称\]
+**参赛队伍：** \[信号去哪了队\]
 **参赛队员：** \[张家赫 贾泽宇 杨名正\]
 **指导教师：** \[姚斌\]
 **提交日期：** 2025年5月14日
@@ -381,7 +381,7 @@ graph TD
 * 数据处理：将ADC原始读数转换为实际电压值，例如 `float voltage = adc_raw * 4.096 / 32767.0;` （根据PGA设置和ADC位数调整）。
 * 此电压值可以通过 `/getStatus` 接口（设计方案）返回给前端。
 
-**(新增) 状态管理模块 (`state.cpp`, `state.h`):** **（实物实现）**
+**状态管理模块 (`state.cpp`, `state.h`):** **（实物实现）**
 
 * 定义 `SystemState` 结构体，包含 `pwmFreq`, `pwmDuty`, `sineFreq`, `sineAmplitude` (注意：实物中正弦波幅度通过 `potentiometer` 间接控制), `pwmAmplitude` (注意：实物中脉冲波幅度主要由逻辑电平决定), `potentiometer` 等系统参数及其默认值。
 * 声明全局变量 `systemState` (程序当前状态) 和 `lastState` (上一次循环的状态，用于检测变化)。
@@ -1077,24 +1077,7 @@ void loop()
 
 综上所述，本项目不仅完成了竞赛的基本要求并制作出功能完善的实物样机，并通过引入Web技术等现代化手段，展现了电子设计与信息技术结合的良好前景。通过本次设计与实践，团队成员在模拟电路、数字电路、微控制器应用、软件编程以及系统调试等方面的综合能力得到了显著提升，为未来更复杂的电子系统设计打下了坚实的基础。
 
-## 九、参考文献与附录
-
-### 9.1 参考文献
-
-* Analog Devices AD9833 Datasheet. (Rev. E, or latest available)
-* Espressif ESP32 Datasheet and Technical Reference Manual. (Latest version from Espressif website)
-* Texas Instruments TL072 Low-Noise JFET-Input Operational Amplifiers Datasheet.
-* Texas Instruments SN74HC14 Hex Schmitt-Trigger Inverters Datasheet.
-* Microchip MCP41010 Single/Dual/Quad Digital Potentiometer with SPI Interface Datasheet.
-* Rob Tillaart, MCP_POT Arduino library documentation. (GitHub repository: RobTillaart/MCP_POT)
-* ArduinoJson library documentation. (arduinojson.org)
-* **（设计方案参考）** Texas Instruments ADS1115 Ultra-Small, Low-Power, 16-Bit Analog-to-Digital Converter with Internal Reference Datasheet.
-* Horowitz, P., & Hill, W. (2015). *The Art of Electronics* (3rd ed.). Cambridge University Press.
-* Sedra, A. S., & Smith, K. C. (2019). *Microelectronic Circuits* (8th ed.). Oxford University Press.
-* 《全国大学生电子设计竞赛获奖作品精选》（相关年份，查阅类似题目方案）
-* ESP32 WebServer Library Examples and Documentation (Arduino Core for ESP32).
-
-### 9.2 附录
+## 九、附录
 
 * **附录A：详细电路原理图**
     * 应包含ESP32核心板与各模块（AD9833模块、MCP41010、74HC14、TL072运放电路、电源模块等）的实际连接图。
