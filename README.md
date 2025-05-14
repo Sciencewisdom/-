@@ -107,38 +107,38 @@
 ```mermaid
 graph TD
     A["USB 5V供电 (实物)"] --> B{"电源模块 (实物)"};
-    B --> C["+3.3V, ESP32及数字逻辑 (实物)"];
-    B --> D["±15V 模拟电路供电 (实物)"];
+    B --> C["+3.3V ESP32及数字逻辑 (实物)"];
+    B --> D["+/-15V 模拟电路供电 (实物)"];
 
     subgraph "控制与处理核心 (实物)"
-        E["ESP32 DevKitC MCU"]
+        E["ESP32 DevKitC MCU"];
     end
 
     subgraph "正弦波通道 (实物)"
-        F_POT["MCP41010 数字电位器 (幅度控制)"]
+        F_POT["MCP41010 数字电位器 幅度控制"];
         E -->|SPI| F["AD9833 DDS模块"];
-        E -->|SPI (共享总线, 不同CS)| F_POT;
-        F -->|正弦波| G["低通滤波器 LPF"];
+        E -->|"SPI 共享总线 不同CS"| F_POT;
+        F -->|"正弦波"| G["低通滤波器 LPF"];
         G --> H["TL072 运放缓冲"];
         H --> I["正弦波输出端子"];
     end
 
     subgraph "脉冲波通道 (实物)"
-        E -->|PWM信号| J["74HC14 施密特触发器整形"];
-        J -->|整形脉冲| K["TL072 运放缓冲"];
+        E -->|"PWM信号"| J["74HC14 施密特触发器整形"];
+        J -->|"整形脉冲"| K["TL072 运放缓冲"];
         K --> L["脉冲波输出端子"];
     end
 
     subgraph "人机交互与显示 (实物控制部分)"
-        E -.->|WiFi (STA模式)| M["Web浏览器 (PC/手机)"];
-        M -.->|HTTP POST (JSON) to /control| E;
-        %% M; %% 数据回传前端显示为设计方案，当前实物主要为控制
+        E -.->|"WiFi STA模式"| M["Web浏览器 PC/手机"];
+        M -.->|"HTTP POST JSON to /control"| E;
     end
 
-    subgraph "辅助采样 (设计方案，实物此版本未集成)"
-        I -->|信号反馈 (设计)| N["ADS1115 ADC模块"];
-        L -->|信号反馈 (设计)| N;
-        N -->|I2C (设计)| E;
+    subgraph "辅助采样 (设计方案 实物未集成)"
+        N["ADS1115 ADC模块"];
+        I -->|"信号反馈 设计"| N;
+        L -->|"信号反馈 设计"| N;
+        N -->|"I2C 设计"| E;
     end
 
     C --> E;
@@ -265,41 +265,42 @@ graph TD
         Lib_WiFi["WiFi库"]
         Lib_SPI["SPI库"]
         Lib_LEDC["LEDC PWM API"]
-        Lib_WebServer["WebServer.h (ESP32 WebServer库)"]
-        Lib_AD9833_Ext["AD9833-Library-Arduino (外部库)"]
-        Lib_MCP_POT_Ext["MCP_POT (外部库 for MCP41010)"]
-        Lib_ArduinoJson["ArduinoJson (外部库)"]
+        Lib_WebServer["WebServer.h ESP32_WebServer库"]
+        Lib_AD9833_Ext["AD9833-Library-Arduino 外部库"]
+        Lib_MCP_POT_Ext["MCP_POT 外部库_for_MCP41010"]
+        Lib_ArduinoJson["ArduinoJson 外部库"]
     end
 
     subgraph "应用层 (src/ 和 include/ 目录 - 实物代码)"
-        M_Main["main.cpp (setup(), loop())"]
-        M_State["state.cpp / state.h (SystemState管理)"]
+        M_Main["main.cpp setup_loop"]
+        M_State["state.cpp state.h SystemState管理"]
 
-        M_Main --> M_Init["初始化各模块 (initState, initHttpControl, initPWM, initAD9833)"]
-        M_Init --> M_HttpSetup["http.cpp (WiFi与Web服务配置)"]
-        M_HttpSetup --> M_ControlLoop["主控制循环 (handleHttpClient in loop())"]
+        M_Main --> M_Init["初始化各模块 initState_initHttpControl_initPWM_initAD9833"]
+        M_Init --> M_HttpSetup["http.cpp WiFi与Web服务配置"]
+        M_HttpSetup --> M_ControlLoop["主控制循环 handleHttpClient_in_loop"]
 
-        M_ControlLoop --> M_WebHandler["http.cpp (Web请求处理: handleControlPost, handleOptions)"]
+        M_ControlLoop --> M_WebHandler["http.cpp Web请求处理 handleControlPost_handleOptions"]
         
-        M_StateAccess["访问/修改 systemState"] 
+        M_StateAccess["访问_修改_systemState"] 
 
-        M_WebHandler -->|参数更新 (JSON)| M_StateAccess
-        M_StateAccess --> M_SignalControl["信号参数控制 (main.cpp -> updateAD9833, updatePWM)"]
+        M_WebHandler -->|"参数更新_JSON"| M_StateAccess
+        M_StateAccess --> M_SignalControl["信号参数控制 main.cpp_updateAD9833_updatePWM"]
 
-        M_SignalControl --> D_AD9833["my_ad9833.cpp (AD9833驱动 + MCP41010驱动)"]
-        M_SignalControl --> D_PWM["pwm.cpp (PWM输出控制)"]
+        M_SignalControl --> D_AD9833["my_ad9833.cpp AD9833驱动_MCP41010驱动"]
+        M_SignalControl --> D_PWM["pwm.cpp PWM输出控制"]
     end
 
     subgraph "设计方案中的扩展模块 (当前实物未集成)"
         App_ADC["ADS1115数据采集应用"]
-        App_ADC --> Drv_ADS1115["ADS1115驱动库 (例如 Adafruit_ADS1X15)"]
-        Drv_ADS1115 --> Lib_I2C["Wire库 (I2C)"]
-        M_WebHandler -.->|获取数据 (设计)| App_ADC
+        Drv_ADS1115["ADS1115驱动库 Adafruit_ADS1X15"]
+        App_ADC --> Drv_ADS1115
+        Drv_ADS1115 --> Lib_I2C["Wire库 I2C"]
+        M_WebHandler -.->|"获取数据 设计"| App_ADC
     end
 
 
-    M_User["用户 (Web浏览器)"] -- HTTP POST --> M_WebHandler;
-    M_User -.->|HTTP GET (设计方案 for 数据回传)| M_WebHandler;
+    M_User["用户 Web浏览器"] -- HTTP_POST --> M_WebHandler;
+    M_User -.->|"HTTP_GET 设计方案_for_数据回传"| M_WebHandler;
 
 
     D_AD9833 --> Lib_SPI;
