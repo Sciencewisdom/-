@@ -115,8 +115,9 @@ graph TD
     end
 
     subgraph "正弦波通道 (实物)"
+        F_POT["MCP41010 数字电位器 (幅度控制)"]
         E -->|SPI| F["AD9833 DDS模块"];
-        E -->|SPI (共享总线, 不同CS)| F_POT["MCP41010 数字电位器 (幅度控制)"];
+        E -->|SPI (共享总线, 不同CS)| F_POT;
         F -->|正弦波| G["低通滤波器 LPF"];
         G --> H["TL072 运放缓冲"];
         H --> I["正弦波输出端子"];
@@ -279,7 +280,10 @@ graph TD
         M_HttpSetup --> M_ControlLoop["主控制循环 (handleHttpClient in loop())"]
 
         M_ControlLoop --> M_WebHandler["http.cpp (Web请求处理: handleControlPost, handleOptions)"]
-        M_WebHandler -->|参数更新 (JSON)| M_StateAccess["访问/修改 systemState"]
+        
+        M_StateAccess["访问/修改 systemState"] 
+
+        M_WebHandler -->|参数更新 (JSON)| M_StateAccess
         M_StateAccess --> M_SignalControl["信号参数控制 (main.cpp -> updateAD9833, updatePWM)"]
 
         M_SignalControl --> D_AD9833["my_ad9833.cpp (AD9833驱动 + MCP41010驱动)"]
@@ -341,8 +345,8 @@ graph TD
 
 **(3) AD9833与MCP41010驱动模块 (`my_ad9833.cpp`, `my_ad9833.h`):** **（实物实现）**
 
-* `#define FSYNC 5` 和 `#define CS_POT 4` 定义了AD9833和MCP41010的片选引脚。
-* 实例化 `AD9833 gen(FSYNC);` 和 `MCP41010 pot(CS_POT);`。
+* `#define FSYNC_PIN 5` 和 `#define CS_POT_PIN 4` 定义了AD9833和MCP41010的片选引脚。 (Note: In code, it's `FSYNC_PIN` and `CS_POT_PIN`.)
+* 实例化 `AD9833 gen(FSYNC_PIN);` 和 `MCP41010 pot(CS_POT_PIN);`。
 * `initAD9833()`:
     * 初始化SPI总线 (`SPI.begin()`)。
     * 初始化MCP41010数字电位器 (`pot.begin()`) 并设置其初始值 (`pot.setValue(systemState.potentiometer)`)。
@@ -356,15 +360,15 @@ graph TD
 
 **(4) PWM输出控制模块 (`pwm.cpp`, `pwm.h`):** **（实物实现）**
 
-* `const int pwmPin = 33;` 定义PWM输出引脚。
-* `const int pwmChannel = 0;` 和 `const int pwmResolution = 8;` 定义PWM通道和分辨率。
+* `const int PWM_PIN = 33;` 定义PWM输出引脚。 (Note: In code, it's `PWM_PIN`.)
+* `const int PWM_CHANNEL = 0;` 和 `const int PWM_RESOLUTION = 8;` 定义PWM通道和分辨率。
 * `initPWM()`:
-    * 使用 `systemState` 中的初始频率和8位分辨率配置PWM通道0 (`ledcSetup(pwmChannel, systemState.pwmFreq, pwmResolution)`)。
-    * 将PWM通道绑定到GPIO33 (`ledcAttachPin(pwmPin, pwmChannel)`).
-    * 设置初始占空比 (`ledcWrite(pwmChannel, systemState.pwmDuty)`)。
+    * 使用 `systemState` 中的初始频率和8位分辨率配置PWM通道0 (`ledcSetup(PWM_CHANNEL, systemState.pwmFreq, PWM_RESOLUTION)`)。
+    * 将PWM通道绑定到GPIO33 (`ledcAttachPin(PWM_PIN, PWM_CHANNEL)`).
+    * 设置初始占空比 (`ledcWrite(PWM_CHANNEL, systemState.pwmDuty)`)。
 * `updatePWM()`:
     * 比较 `systemState.pwmFreq` 和 `lastState.pwmFreq`，若不同则重新配置PWM通道频率 (`ledcSetup`) 并重新应用占空比，然后更新 `lastState.pwmFreq`。
-    * 比较 `systemState.pwmDuty` 和 `lastState.pwmDuty`，若不同则调用 `ledcWrite(pwmChannel, systemState.pwmDuty)` 更新PWM占空比，并更新 `lastState.pwmDuty`。
+    * 比较 `systemState.pwmDuty` 和 `lastState.pwmDuty`，若不同则调用 `ledcWrite(PWM_CHANNEL, systemState.pwmDuty)` 更新PWM占空比，并更新 `lastState.pwmDuty`。
 
 **(5) ADS1115驱动与数据采集模块:**
 **此模块驱动及数据采集为设计方案，当前实物版本未集成。若实现，将涉及以下功能：**
@@ -449,12 +453,12 @@ graph TD
 **(2) ESP32 PWM (LEDC) 参数计算：**
 
 * ESP32的LEDC外设允许直接设置频率和占空比。
-* 假设使用 `pwmResolution = 8` (即8位分辨率)，则占空比的设置范围为 $0$ 到 $2^8 - 1 = 255$。
+* 假设使用 `PWM_RESOLUTION = 8` (即8位分辨率)，则占空比的设置范围为 $0$ 到 $2^8 - 1 = 255$。
 * 占空比百分比 $D% = (\text{DutyValue} / 255) \times 100%$。
-* `ledcSetup(channel, freq, resolution_bits)` 函数用于配置。`freq` 参数即为目标频率。ESP32会内部计算合适的分频器和计数器值。
+* `ledcSetup(PWM_CHANNEL, freq, PWM_RESOLUTION)` 函数用于配置。`freq` 参数即为目标频率。ESP32会内部计算合适的分频器和计数器值。
 * 例如，要产生 $f_{PWM} = 20 \text{ kHz}$，占空比50% (DutyValue = 127 for 8-bit)：
-    `ledcSetup(pwmChannel, 20000, 8);`
-    `ledcWrite(pwmChannel, 127);`
+    `ledcSetup(PWM_CHANNEL, 20000, 8);`
+    `ledcWrite(PWM_CHANNEL, 127);`
 
 **(3) 滤波器参数计算（示例）：**
 
