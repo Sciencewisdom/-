@@ -945,41 +945,556 @@ void loop()
 ### 7.2 HTML/CSS/JavaScript
 
 **实物系统通过外部Web页面与ESP32进行交互。该前端页面负责构建JSON数据并通过HTTP POST请求发送到ESP32的 `/control` 接口。**
-一个基本的前端页面（例如 `index.html`，用户在浏览器中打开）可能包含以下元素和逻辑：
 
-* **HTML结构：**
-    * 表单元素用于输入频率、占空比（仅脉冲波）、幅度参数（0-100%）。
-    * 下拉菜单选择波形类型（"sine" 或 "pulse"）。
-    * 一个“应用设置”按钮。
-* **JavaScript逻辑：**
-    * 给按钮添加事件监听器。
-    * 点击按钮时，读取各输入框和下拉菜单的值。
-    * 根据读取的值构建一个JSON对象，例如：
-        ```javascript
-        let params = {
-            waveType: document.getElementById('waveTypeSelect').value,
-            frequency: parseInt(document.getElementById('frequencyInput').value),
-            amplitude: parseInt(document.getElementById('amplitudeInput').value), // 0-100
-            duty: parseInt(document.getElementById('dutyInput').value) // 0-100
-        };
-        ```
-    * 使用 `fetch` API 发送POST请求到ESP32的IP地址的 `/control` 路径：
-        ```javascript
-        fetch('http://<ESP32_IP_ADDRESS>/control', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(params)
-        })
-        .then(response => response.json())
-        .then(data => console.log('Success:', data))
-        .catch((error) => console.error('Error:', error));
-        ```
-    * **（设计方案）** 如果需要显示ESP32的当前状态，前端可以定期（例如使用 `setInterval`）发送GET请求到一个新的 `/getStatus` 接口（需在ESP32端实现），该接口返回包含当前频率、占空比等信息的JSON。然后前端JS更新页面上的显示元素。
-    * **（设计方案）** 如果集成了ADS1115，`/getStatus` 接口返回的数据中可以包含ADC采样值，前端JS可以使用图表库（如Chart.js）将其绘制成趋势图。
+以下是构成前端React应用的关键代码文件：
 
-**设计方案中，更完善的前端可以包含数据实时显示和图表功能，具体实现可参考报告中原有的HTML/JS示例代码（如第七部分曾展示的包含Chart.js的版本），并根据后端数据接口进行调整。**
+**`index.html` (前端入口HTML)**
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React + TS</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+**`package.json` (前端项目配置)**
+```json
+{
+  "name": "signal-oscilloscope",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@chakra-ui/react": "^3.17.0",
+    "@emotion/react": "^11.14.0",
+    "axios": "^1.9.0",
+    "next-themes": "^0.4.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-icons": "^5.5.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/axios": "^0.9.36",
+    "@types/node": "^22.15.17",
+    "@types/react": "^19.1.2",
+    "@types/react-chartjs-2": "^2.0.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "chart.js": "^4.4.9",
+    "eslint": "^9.25.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "react-chartjs-2": "^5.3.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.30.1",
+    "vite": "^6.3.5",
+    "vite-tsconfig-paths": "^5.1.4"
+  }
+}
+```
+
+**`src/main.tsx` (React应用入口)**
+```tsx
+import { Provider } from "@/components/ui/provider"
+import React from "react"
+import ReactDOM from "react-dom/client"
+// import App from "./App" // App.tsx is not the main component here
+import SignalGenerator from "@/components/SignalGenerator" // Main UI component
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <Provider> {/* UI Provider for Chakra and theming */}
+      <SignalGenerator />
+    </Provider>
+  </React.StrictMode>,
+)
+```
+
+**`src/components/ui/provider.tsx` (UI提供者组件)**
+```tsx
+"use client"
+
+import { ChakraProvider, defaultSystem } from "@chakra-ui/react"
+import {
+  ColorModeProvider,
+  type ColorModeProviderProps,
+} from "./color-mode"
+
+export function Provider(props: ColorModeProviderProps) {
+  return (
+    <ChakraProvider value={defaultSystem}>
+      <ColorModeProvider {...props} />
+    </ChakraProvider>
+  )
+}
+```
+
+**`src/components/ui/color-mode.tsx` (颜色模式切换)**
+```tsx
+"use client"
+
+import type { IconButtonProps, SpanProps } from "@chakra-ui/react"
+import { ClientOnly, IconButton, Skeleton, Span } from "@chakra-ui/react"
+import { ThemeProvider, useTheme } from "next-themes"
+import type { ThemeProviderProps } from "next-themes"
+import * as React from "react"
+import { LuMoon, LuSun } from "react-icons/lu"
+
+export interface ColorModeProviderProps extends ThemeProviderProps {}
+
+export function ColorModeProvider(props: ColorModeProviderProps) {
+  return (
+    <ThemeProvider attribute="class" disableTransitionOnChange {...props} />
+  )
+}
+
+export type ColorMode = "light" | "dark"
+
+export interface UseColorModeReturn {
+  colorMode: ColorMode
+  setColorMode: (colorMode: ColorMode) => void
+  toggleColorMode: () => void
+}
+
+export function useColorMode(): UseColorModeReturn {
+  const { resolvedTheme, setTheme } = useTheme()
+  const toggleColorMode = () => {
+    setTheme(resolvedTheme === "dark" ? "light" : "dark")
+  }
+  return {
+    colorMode: resolvedTheme as ColorMode,
+    setColorMode: setTheme,
+    toggleColorMode,
+  }
+}
+
+export function useColorModeValue<T>(light: T, dark: T) {
+  const { colorMode } = useColorMode()
+  return colorMode === "dark" ? dark : light
+}
+
+export function ColorModeIcon() {
+  const { colorMode } = useColorMode()
+  return colorMode === "dark" ? <LuMoon /> : <LuSun />
+}
+
+interface ColorModeButtonProps extends Omit<IconButtonProps, "aria-label"> {}
+
+export const ColorModeButton = React.forwardRef<
+  HTMLButtonElement,
+  ColorModeButtonProps
+>(function ColorModeButton(props, ref) {
+  const { toggleColorMode } = useColorMode()
+  return (
+    <ClientOnly fallback={<Skeleton boxSize="8" />}>
+      <IconButton
+        onClick={toggleColorMode}
+        variant="ghost"
+        aria-label="Toggle color mode" // 切换颜色模式
+        size="sm"
+        ref={ref}
+        {...props}
+        css={{
+          _icon: {
+            width: "5",
+            height: "5",
+          },
+        }}
+      >
+        <ColorModeIcon />
+      </IconButton>
+    </ClientOnly>
+  )
+})
+
+export const LightMode = React.forwardRef<HTMLSpanElement, SpanProps>(
+  function LightMode(props, ref) {
+    return (
+      <Span
+        color="fg"
+        display="contents"
+        className="chakra-theme light"
+        colorPalette="gray"
+        colorScheme="light"
+        ref={ref}
+        {...props}
+      />
+    )
+  },
+)
+
+export const DarkMode = React.forwardRef<HTMLSpanElement, SpanProps>(
+  function DarkMode(props, ref) {
+    return (
+      <Span
+        color="fg"
+        display="contents"
+        className="chakra-theme dark"
+        colorPalette="gray"
+        colorScheme="dark"
+        ref={ref}
+        {...props}
+      />
+    )
+  },
+)
+```
+
+**`src/components/SignalGenerator.tsx` (信号发生器UI组件)**
+```tsx
+// components/SignalGenerator.tsx
+import React, { useState } from 'react'
+import { Button, Input, HStack, VStack, Box, Heading } from '@chakra-ui/react'
+import axios from 'axios'
+
+const SignalGenerator = () => {
+  // 状态管理
+  const [frequency, setFrequency] = useState(1000)  // 初始频率 1000Hz
+  const [amplitude, setAmplitude] = useState(50)    // 初始幅度 (0-100% for UI)
+  const [duty, setDuty] = useState(50)             // 初始占空比 50%
+  const [waveType, setWaveType] = useState('sine') // 默认正弦波
+  const [apiAddress, setApiAddress] = useState('http://localhost:5000/control') // 默认 API 地址 (ESP32 IP)
+
+  // 发送数据到后端
+  const sendDataToBackend = (updatedParams: {
+    frequency?: number,
+    amplitude?: number, // UI amplitude (0-100)
+    duty?: number,      // UI duty (0-100)
+    waveType?: string
+  }) => {
+    const currentParams = {
+        waveType: waveType,
+        frequency: frequency,
+        amplitude: amplitude, // This is the UI amplitude (0-100)
+        duty: duty,           // This is the UI duty (0-100)
+    };
+
+    const payload = { ...currentParams, ...updatedParams };
+
+    // Ensure amplitude and duty are within 0-100 for the payload
+    if (payload.amplitude < 0) payload.amplitude = 0;
+    if (payload.amplitude > 100) payload.amplitude = 100;
+    if (payload.duty < 0) payload.duty = 0;
+    if (payload.duty > 100) payload.duty = 100;
+
+
+    axios
+      .post(apiAddress, payload)
+      .then((response) => {
+        console.log('数据已发送:', response.data) // 数据已发送
+      })
+      .catch((error) => {
+        console.error('发送数据时出错:', error) // 发送数据时出错
+      })
+  }
+
+  // 处理频率更改
+  const handleFrequencyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(e.target.value)
+    setFrequency(value)
+    sendDataToBackend({ frequency: value })
+  }
+  const adjustFrequency = (amount: number) => {
+    const newValue = frequency + amount;
+    setFrequency(newValue);
+    sendDataToBackend({ frequency: newValue });
+  }
+
+  // 处理幅度更改 (UI: 0-100%)
+  const handleAmplitudeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = Number(e.target.value)
+    if (value < 0) value = 0;
+    if (value > 100) value = 100;
+    setAmplitude(value)
+    sendDataToBackend({ amplitude: value })
+  }
+   const adjustAmplitude = (amount: number) => {
+    let newValue = amplitude + amount;
+    if (newValue < 0) newValue = 0;
+    if (newValue > 100) newValue = 100;
+    setAmplitude(newValue);
+    sendDataToBackend({ amplitude: newValue });
+  }
+
+
+  // 处理占空比更改 (UI: 0-100%)
+  const handleDutyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = Number(e.target.value)
+    if (value < 0) value = 0;
+    if (value > 100) value = 100;
+    setDuty(value)
+    sendDataToBackend({ duty: value })
+  }
+  const adjustDuty = (amount: number) => {
+    let newValue = duty + amount;
+    if (newValue < 0) newValue = 0;
+    if (newValue > 100) newValue = 100;
+    setDuty(newValue);
+    sendDataToBackend({ duty: newValue });
+  }
+
+  // 处理波形类型更改
+  const handleWaveTypeChange = (type: string) => {
+    setWaveType(type)
+    sendDataToBackend({ waveType: type })
+  }
+
+  return (
+    <VStack spacing={5} align="center" w="100%" h="100vh" justify="center" p={4}>
+      <Heading as="h1" size="xl" mb={6}>信号发生器</Heading> {/* 信号发生器 */}
+
+      {/* API 地址输入框 */}
+      <HStack>
+        <Input
+          value={apiAddress}
+          onChange={(e) => setApiAddress(e.target.value)}
+          placeholder="输入 API 地址" // 输入 API 地址
+          w="300px"
+        />
+      </HStack>
+
+      {/* 波形类型选择 */}
+      <HStack spacing={4} mt={4} p={2} borderRadius="md" borderWidth="1px" >
+        <Button
+          onClick={() => handleWaveTypeChange('sine')}
+          colorScheme={waveType === 'sine' ? 'blue' : 'gray'}
+          variant={waveType === 'sine' ? 'solid' : 'outline'}
+          w="120px"
+        >
+          正弦波 {/* 正弦波 */}
+        </Button>
+        <Button
+          onClick={() => handleWaveTypeChange('pulse')}
+          colorScheme={waveType === 'pulse' ? 'blue' : 'gray'}
+          variant={waveType === 'pulse' ? 'solid' : 'outline'}
+          w="120px"
+        >
+          脉冲波 {/* 脉冲波 */}
+        </Button>
+      </HStack>
+
+      {/* 频率调整 */}
+      <VStack spacing={1} align="stretch" w="300px">
+        <Heading size="md" textAlign="center">频率 (Hz)</Heading> {/* 频率 */}
+        <HStack>
+          <Button onClick={() => adjustFrequency(-100)} flexGrow={1}>-100</Button>
+          <Button onClick={() => adjustFrequency(-10)} flexGrow={1}>-10</Button>
+          <Input
+            value={frequency}
+            type="number"
+            onChange={handleFrequencyChange}
+            w="100px"
+            textAlign="center"
+          />
+          <Button onClick={() => adjustFrequency(10)} flexGrow={1}>+10</Button>
+          <Button onClick={() => adjustFrequency(100)} flexGrow={1}>+100</Button>
+        </HStack>
+      </VStack>
+
+      {/* 幅度调整 (0-100%) */}
+      <VStack spacing={1} align="stretch" w="300px">
+        <Heading size="md" textAlign="center">幅度 (%)</Heading> {/* 幅度 */}
+        <HStack>
+          <Button onClick={() => adjustAmplitude(-10)} flexGrow={1}>-10</Button>
+          <Button onClick={() => adjustAmplitude(-1)} flexGrow={1}>-1</Button>
+          <Input
+            value={amplitude}
+            type="number"
+            onChange={handleAmplitudeChange}
+            min={0}
+            max={100}
+            w="100px"
+            textAlign="center"
+          />
+          <Button onClick={() => adjustAmplitude(1)} flexGrow={1}>+1</Button>
+          <Button onClick={() => adjustAmplitude(10)} flexGrow={1}>+10</Button>
+        </HStack>
+      </VStack>
+
+      {/* 占空比调整 (0-100%) - 仅脉冲波时相关 */}
+      {waveType === 'pulse' && (
+        <VStack spacing={1} align="stretch" w="300px">
+          <Heading size="md" textAlign="center">占空比 (%)</Heading> {/* 占空比 */}
+          <HStack>
+            <Button onClick={() => adjustDuty(-10)} flexGrow={1}>-10</Button>
+            <Button onClick={() => adjustDuty(-1)} flexGrow={1}>-1</Button>
+            <Input
+              value={duty}
+              type="number"
+              onChange={handleDutyChange}
+              min={0}
+              max={100}
+              w="100px"
+              textAlign="center"
+            />
+            <Button onClick={() => adjustDuty(1)} flexGrow={1}>+1</Button>
+            <Button onClick={() => adjustDuty(10)} flexGrow={1}>+10</Button>
+          </HStack>
+        </VStack>
+      )}
+
+      {/* 动画波形展示 (占位区) */}
+      <Box
+        w="100%"
+        maxW="600px"
+        h="200px"
+        bg="gray.100"
+        _dark={{ bg: "gray.700" }}
+        borderWidth="1px"
+        borderRadius="md"
+        mt={4}
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Heading size="md" color="gray.500">波形展示区</Heading> {/* 波形展示区 */}
+      </Box>
+    </VStack>
+  )
+}
+
+export default SignalGenerator
+```
+
+**`src/index.css` (全局样式)**
+```css
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* color-scheme: light dark; */ /* Managed by next-themes and Chakra UI */
+  /* color: rgba(255, 255, 255, 0.87); */
+  /* background-color: #242424; */
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  /* place-items: center; */ /* Let Chakra handle centering if needed */
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+/* Button styling is handled by Chakra UI by default */
+/*
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+*/
+
+/* Light/Dark mode specific styles are handled by Chakra UI and next-themes */
+/*
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+*/
+```
+
+**`src/App.css` (应用特定样式 - 可能为空或较少内容)**
+```css
+/* #root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+} */ /* Styling handled by Chakra UI and SignalGenerator component */
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+/* .card {
+  padding: 2em;
+} */
+
+.read-the-docs {
+  color: #888;
+}
+```
 
 ## 八、结束语与展望
 
@@ -1023,6 +1538,7 @@ void loop()
 ## 九、附录
 
 * **附录A：详细电路原理图**
+![SCH_Schematic1_2025-05-14](https://github.com/user-attachments/assets/0e7fc500-c0b1-4e30-a216-a249feaa1b90)
 
 * **附录B：元器件清单（实物用料）**
     * ESP32 DevKitC (1), AD9833模块 (1), MCP41010-103E/P (10kΩ) (1), TL072CN (2), 74HC14N (1), 电阻 (各种阻值，1/4W), 电容 (瓷片，电解，各种容值和耐压), DC-DC升压模块 (±15V输出) (1), USB线缆 (1), 洞洞板，杜邦线等。
